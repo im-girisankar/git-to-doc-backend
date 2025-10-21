@@ -5,7 +5,6 @@ import * as githubService from '../services/githubService.js';
 import * as codeAnalyzer from '../services/codeAnalyzer.js';
 import * as ollamaService from '../services/ollamaService.js';
 import * as jobManager from '../services/jobManager.js';
-import { generateMarkdown } from '../utils/markdownGenerator.js';
 import * as pythonAnalyzer from '../services/pythonAnalyzer.js';
 import { PROGRESS_STAGES, JOB_STATUS } from '../config/constants.js';
 
@@ -16,7 +15,6 @@ router.post('/analyze', async (req, res) => {
 
   console.log('📝 Analyzing repository:', repoUrl);
 
-  // Validate GitHub URL
   const validation = validateGitHubUrl(repoUrl);
   if (!validation.isValid) {
     console.log('❌ Validation failed:', validation.error);
@@ -26,7 +24,6 @@ router.post('/analyze', async (req, res) => {
   const jobId = uuidv4();
   console.log('🆔 Job ID created:', jobId);
   
-  // Create job
   jobManager.createJob(jobId, {
     repoUrl,
     context,
@@ -34,7 +31,6 @@ router.post('/analyze', async (req, res) => {
     progress: PROGRESS_STAGES.CLONING
   });
 
-  // Start async processing
   processRepository(jobId, repoUrl, context).catch(error => {
     console.error('❌ Repository processing failed:', error.message);
     jobManager.updateJob(jobId, {
@@ -52,25 +48,26 @@ router.post('/analyze', async (req, res) => {
 
 async function processRepository(jobId, repoUrl, context) {
   try {
-    // Stage 1: Parse URL and fetch repository info FIRST
+    // Stage 1: Fetch repository data
     jobManager.updateJob(jobId, { progress: PROGRESS_STAGES.FETCHING });
     
     let files, repoInfo, owner, repo, readme;
     try {
-      // Parse URL first
       const parsed = githubService.parseGitHubUrl(repoUrl);
       owner = parsed.owner;
       repo = parsed.repo;
       console.log(`📦 Repository: ${owner}/${repo}`);
       
-      // Fetch repo info
       repoInfo = await githubService.fetchRepositoryInfo(owner, repo);
       console.log(`✅ Repository info fetched: ${repoInfo.fullName}`);
       
-      // Fetch README
       readme = await githubService.fetchReadme(owner, repo);
+      if (readme) {
+        console.log(`📖 README fetched (${readme.length} characters)`);
+      } else {
+        console.log(`📖 No existing README - will generate from scratch`);
+      }
       
-      // Then fetch contents
       files = await githubService.fetchRepositoryContents(repoUrl);
       console.log(`📁 Found ${files.length} files`);
       
@@ -79,10 +76,10 @@ async function processRepository(jobId, repoUrl, context) {
     }
 
     if (!files || files.length === 0) {
-      throw new Error('No supported code files found in repository. Looking for .js, .ts, .jsx, .tsx, .py files.');
+      throw new Error('No supported code files found in repository.');
     }
 
-    // Stage 2: Analyze code
+    // Stage 2: Analyze code structure
     jobManager.updateJob(jobId, { progress: PROGRESS_STAGES.ANALYZING });
     const analysisResults = {
       functions: [],
@@ -92,7 +89,7 @@ async function processRepository(jobId, repoUrl, context) {
       apiEndpoints: []
     };
 
-    console.log('🔍 Starting code analysis...');
+    console.log('🔍 Analyzing code structure...');
     for (const file of files) {
       jobManager.updateJob(jobId, {
         progress: { ...PROGRESS_STAGES.ANALYZING, currentFile: file.path }
@@ -114,71 +111,58 @@ async function processRepository(jobId, repoUrl, context) {
       }
     }
 
-    console.log(`✅ Analysis complete: ${analysisResults.functions.length} functions, ${analysisResults.classes.length} classes, ${analysisResults.apiEndpoints.length} endpoints`);
+    console.log(`✅ Code analysis complete:`);
+    console.log(`   - ${analysisResults.functions.length} functions`);
+    console.log(`   - ${analysisResults.classes.length} classes`);
+    console.log(`   - ${analysisResults.apiEndpoints.length} API endpoints`);
 
-    // Stage 3: Generate summaries and instructions
-    jobManager.updateJob(jobId, { progress: PROGRESS_STAGES.GENERATING });
-
-    console.log('🤖 Generating AI overview...');
-    const overview = await ollamaService.generateProjectOverview(
-      repoInfo,
-      analysisResults,
-      context,
-      readme
-    );
-
-    console.log('🤖 Generating installation instructions...');
-    const installInstructions = await ollamaService.generateInstallationInstructions(
-      repoInfo,
-      files,
-      readme
-    );
-
-    console.log('🤖 Generating usage instructions...');
-    const usageInstructions = await ollamaService.generateUsageInstructions(
-      repoInfo,
-      files,
-      readme,
-      analysisResults.functions,
-      analysisResults.apiEndpoints
-    );
-
-    // Generate function summaries (limit to top 20 for performance)
-    const topFunctions = analysisResults.functions.slice(0, 20);
-    console.log(`🤖 Generating summaries for ${topFunctions.length} functions...`);
-
-    // Stage 4: Format markdown
-    jobManager.updateJob(jobId, { progress: PROGRESS_STAGES.FORMATTING });
-    console.log('📝 Formatting markdown...');
-    const markdown = generateMarkdown({
-      repoInfo,
-      overview,
-      context,
-      readme,
-      files,
-      functions: topFunctions,
-      classes: analysisResults.classes.slice(0, 10),
-      apiEndpoints: analysisResults.apiEndpoints
+    // Stage 3: Generate comprehensive README with AI
+    jobManager.updateJob(jobId, { 
+      progress: { 
+        name: '🤖 Generating README with AI', 
+        percentage: 70 
+      } 
     });
 
-    console.log('✅ Documentation generation complete!');
+    console.log('\n' + '='.repeat(60));
+    console.log('🤖 GENERATING ENHANCED README WITH AI (Ollama + Llama3)');
+    console.log('   This may take 1-3 minutes for comprehensive output...');
+    console.log('='.repeat(60) + '\n');
 
-    // Complete
+    // THIS IS THE KEY LINE - Use AI-generated README directly!
+    const enhancedReadme = await ollamaService.generateEnhancedReadme(
+      repoInfo,
+      files,
+      readme,
+      analysisResults,
+      context
+    );
+
+    console.log(`\n✅ README generation complete!`);
+    console.log(`   Length: ${enhancedReadme.length} characters`);
+    console.log(`   Lines: ${enhancedReadme.split('\n').length}\n`);
+
+    // Store the AI-generated README directly - NO markdown generator!
     jobManager.updateJob(jobId, {
       status: JOB_STATUS.COMPLETED,
       progress: PROGRESS_STAGES.COMPLETED,
-      markdown,
+      markdown: enhancedReadme, // Direct AI output!
       metadata: {
         filesAnalyzed: files.length,
         functionsFound: analysisResults.functions.length,
         classesFound: analysisResults.classes.length,
-        endpointsDetected: analysisResults.apiEndpoints.length
+        endpointsDetected: analysisResults.apiEndpoints.length,
+        readmeLength: enhancedReadme.length,
+        hadExistingReadme: !!readme
       },
       repoInfo
     });
 
+    console.log('✅ Job completed successfully!\n');
+
   } catch (error) {
     console.error('❌ Processing error:', error.message);
+    console.error('   Stack:', error.stack);
     jobManager.updateJob(jobId, {
       status: JOB_STATUS.FAILED,
       error: error.message || 'Unknown error occurred'

@@ -58,89 +58,147 @@ Be specific and technical. Focus on architecture, not installation steps.`;
 export async function generateEnhancedReadme(repoInfo, files, readme, analysisResults, context) {
   const configFiles = files.filter(f => {
     const filename = f.path.split('/').pop();
-    return ['package.json', 'requirements.txt', 'setup.py', 'Cargo.toml', 'go.mod', 'pom.xml', 'pyproject.toml', 'Dockerfile'].includes(filename);
+    return ['package.json', 'requirements.txt', 'setup.py', 'Cargo.toml', 'go.mod', 'pom.xml', 'pyproject.toml', 'Dockerfile', '.env.example'].includes(filename);
   });
 
   const configContent = configFiles.slice(0, 3).map(f => 
     `${f.path}:\n${f.content.slice(0, 800)}`
   ).join('\n\n');
 
-  const existingReadme = readme ? `\n\nEXISTING README (Full Content):\n${readme}` : '\n\nNo existing README found.';
+  // Include full README if it exists
+  const existingReadme = readme ? `\n\nEXISTING README CONTENT:\n${readme}` : '\n\nNo existing README found. Generate a comprehensive one from scratch.';
 
-  const prompt = `You are an expert technical writer creating a comprehensive GitHub README.md file.
+  // Get sample of main files
+  const mainFiles = files.filter(f => 
+    f.path.match(/server\.|index\.|main\.|app\.|api\./i) && 
+    (f.language === 'JavaScript' || f.language === 'TypeScript' || f.language === 'Python')
+  ).slice(0, 3);
 
-PROJECT INFORMATION:
-- Name: ${repoInfo.fullName}
-- Description: ${repoInfo.description || 'No description'}
-- Language: ${repoInfo.language}
-- Stars: ${repoInfo.stars}
+  const codeExamples = mainFiles.map(f => 
+    `File: ${f.path}\n${f.content.slice(0, 1000)}`
+  ).join('\n\n---\n\n');
 
-CODE ANALYSIS:
-- ${analysisResults.functions.length} functions found
-- ${analysisResults.classes.length} classes found  
-- ${analysisResults.apiEndpoints.length} API endpoints detected
-- ${files.length} files analyzed
+  const prompt = `You are an expert technical writer creating a comprehensive, professional GitHub README.md file.
 
-CONFIGURATION FILES:
-${configContent}
+PROJECT DETAILS:
+- Repository: ${repoInfo.fullName}
+- Description: ${repoInfo.description || 'No description provided'}
+- Primary Language: ${repoInfo.language}
+- GitHub Stars: ${repoInfo.stars}
+
+CODE ANALYSIS RESULTS:
+- Total Files: ${files.length}
+- Functions: ${analysisResults.functions.length}
+- Classes: ${analysisResults.classes.length}
+- API Endpoints: ${analysisResults.apiEndpoints.length}
+
+KEY CONFIGURATION FILES:
+${configContent || 'No configuration files found'}
+
+SAMPLE CODE FROM MAIN FILES:
+${codeExamples || 'No main entry files identified'}
 ${existingReadme}
 
-${context ? `\nADDITIONAL CONTEXT:\n${context}` : ''}
+${context ? `\nADDITIONAL USER CONTEXT:\n${context}` : ''}
 
-TASK: Generate a complete, professional README.md for GitHub that includes:
+TASK: Generate a complete, professional README.md for this GitHub repository.
 
-## 1. PROJECT OVERVIEW
-- Clear description of what the project does
-- Key features and capabilities
-- Problem it solves
+CRITICAL REQUIREMENTS:
+1. If an EXISTING README was provided above:
+   - Read it completely and understand the project
+   - Keep ALL good existing content
+   - Enhance and improve unclear sections
+   - Add any missing critical sections
+   - Improve formatting and structure
 
-## 2. HOW IT WORKS (Architecture/Structure)
-- Explain the system architecture
+2. If NO existing README (generate from scratch):
+   - Analyze the code structure and configuration files
+   - Create comprehensive documentation
+
+REQUIRED SECTIONS (in this order):
+
+# [Project Name]
+
+## 📖 Overview
+- Clear 2-3 sentence description of what this project does
+- What problem it solves
+- Key capabilities
+
+## ✨ Features
+- Bullet list of main features (3-8 items)
+- What makes this project useful
+
+## 🏗️ Architecture / How It Works
+- Explain the system architecture in 2-3 paragraphs
 - How components interact
-- Key technologies and design patterns
-- Data flow or processing pipeline
+- Key design patterns or technologies
+- Data flow or request/response cycle
+- Be technical but clear
 
-## 3. INSTALLATION
-- Prerequisites (specific versions)
-- Step-by-step installation commands
-- Environment setup
-- Dependencies
+## 🚀 Installation
 
-## 4. USAGE
-- Basic usage examples with actual commands
+### Prerequisites
+- List required software, versions
+- Required tools (Node.js, Python, Ollama, etc.)
+
+### Setup Steps
+\`\`\`bash
+# Provide actual, working commands
+# Include cloning, dependency installation, configuration
+\`\`\`
+
+## 📖 Usage
+
+### Basic Usage
+\`\`\`bash
+# Show how to run/start the application
+# Include actual commands with examples
+\`\`\`
+
+### Configuration
+- Explain any .env variables
 - Configuration options
-- Common use cases
-- Code snippets where helpful
 
-## 5. PROJECT STRUCTURE (if complex)
-- Key directories and their purposes
-- Important files
+### Examples (if applicable)
+- Show common use cases with actual code/commands
 
-## 6. ADDITIONAL SECTIONS (if relevant)
-- API Reference (if applicable)
-- Contributing guidelines
-- License
-- Acknowledgments
+## 📁 Project Structure (if relevant)
+\`\`\`
+# Show key directories and what they contain
+\`\`\`
 
-IMPORTANT INSTRUCTIONS:
-1. If an existing README was provided, IMPROVE and ENHANCE it by:
-   - Keeping all good existing content
-   - Adding missing sections
-   - Clarifying unclear explanations
-   - Making installation/usage more detailed
-   - Improving structure and formatting
+## 🔌 API Reference (if this is an API)
+${analysisResults.apiEndpoints.length > 0 ? `
+List the ${analysisResults.apiEndpoints.length} API endpoints with:
+- Method and path
+- Description
+- Parameters
+- Response format
+` : '# Skip this section if not an API'}
 
-2. Write in clear, professional markdown
-3. Use code blocks with proper syntax highlighting
-4. Add emojis sparingly for visual appeal (📦 🚀 💡 ⚙️)
-5. Be specific and detailed - this is the main documentation
-6. Focus heavily on HOW IT WORKS, INSTALLATION, and USAGE
-7. Make it beginner-friendly but technically accurate
+## 🤝 Contributing (optional)
+Brief note on how to contribute
 
-Generate the complete README.md content now:`;
+## 📄 License (if known)
+Mention license
+
+## 🙏 Acknowledgments (if relevant)
+Credit any dependencies or inspiration
+
+FORMATTING RULES:
+- Use proper markdown with code blocks
+- Add emojis to section headers (📦 🚀 💡 ⚙️ 🔧 📖)
+- Use \`\`\`bash, \`\`\`javascript, \`\`\`python for code blocks
+- Make it visually appealing and scannable
+- Be specific and detailed - don't be vague
+- Focus especially on "How It Works", "Installation", and "Usage"
+
+IMPORTANT: Generate the COMPLETE README now. Do not truncate. Write at least 200 lines of quality documentation.`;
 
   try {
-    console.log('📝 Generating enhanced README (no timeout, may take 1-3 minutes)...');
+    console.log('📝 Calling Ollama API for README generation...');
+    console.log(`   Model: ${MODEL}`);
+    console.log(`   No timeout set - will wait as long as needed`);
     
     const response = await axiosInstance.post(
       `${OLLAMA_BASE_URL}/api/generate`,
@@ -149,21 +207,32 @@ Generate the complete README.md content now:`;
         prompt,
         stream: false,
         options: {
-          temperature: 0.4, // Slightly lower for more factual output
-          num_predict: 3000, // Much higher for complete README
-          top_p: 0.9
+          temperature: 0.4,
+          num_predict: 3500, // Increased even more
+          top_p: 0.9,
+          top_k: 50
         }
       }
     );
 
     const generatedReadme = response.data.response.trim();
-    console.log(`✅ README generated successfully (${generatedReadme.length} characters)`);
+    
+    console.log(`✅ README generated successfully!`);
+    console.log(`   Characters: ${generatedReadme.length}`);
+    console.log(`   Lines: ${generatedReadme.split('\n').length}`);
+    
+    // Validate it's not too short
+    if (generatedReadme.length < 500) {
+      console.warn('⚠️  README seems too short, using fallback...');
+      return generateBasicReadme(repoInfo, analysisResults, configContent);
+    }
     
     return generatedReadme;
   } catch (error) {
     console.error('❌ Failed to generate enhanced README:', error.message);
+    console.error('   Stack:', error.stack);
     
-    // Fallback: Return enhanced version of existing README or basic template
+    // Fallback
     if (readme) {
       return `# ${repoInfo.name}\n\n${readme}`;
     }
