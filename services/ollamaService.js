@@ -5,9 +5,10 @@ dotenv.config();
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
 const MODEL = process.env.OLLAMA_MODEL || 'llama3:8b';
-const TIMEOUT = parseInt(process.env.OLLAMA_TIMEOUT) || 60000;
 
-const axiosInstance = axios.create();
+const axiosInstance = axios.create({
+  timeout: 0  // No timeout
+});
 
 export async function generateProjectOverview(repoInfo, analysisResults, userContext, readme) {
   const contextInfo = userContext ? `\n\nUser Context: ${userContext}` : '';
@@ -56,189 +57,220 @@ Be specific and technical. Focus on architecture, not installation steps.`;
 }
 
 export async function generateEnhancedReadme(repoInfo, files, readme, analysisResults, context) {
+  // Build prompt (same as before)
   const configFiles = files.filter(f => {
     const filename = f.path.split('/').pop();
-    return ['package.json', 'requirements.txt', 'setup.py', 'Cargo.toml', 'go.mod', 'pom.xml', 'pyproject.toml', 'Dockerfile', '.env.example'].includes(filename);
-  });
+    return ['package.json', 'requirements.txt', 'setup.py', 'pyproject.toml'].includes(filename);
+  }).slice(0, 2);
 
-  const configContent = configFiles.slice(0, 3).map(f => 
-    `${f.path}:\n${f.content.slice(0, 800)}`
+  const configContent = configFiles.map(f => 
+    `${f.path}:\n${f.content.slice(0, 400)}`
   ).join('\n\n');
 
-  // Include full README if it exists
-  const existingReadme = readme ? `\n\nEXISTING README CONTENT:\n${readme}` : '\n\nNo existing README found. Generate a comprehensive one from scratch.';
+  const readmeInfo = readme 
+    ? `\n\nEXISTING README:\n${readme.slice(0, 1200)}` 
+    : '\n\nNo existing README.';
 
-  // Get sample of main files
-  const mainFiles = files.filter(f => 
-    f.path.match(/server\.|index\.|main\.|app\.|api\./i) && 
-    (f.language === 'JavaScript' || f.language === 'TypeScript' || f.language === 'Python')
-  ).slice(0, 3);
+  const filesList = files.slice(0, 10).map(f => f.path).join(', ');
 
-  const codeExamples = mainFiles.map(f => 
-    `File: ${f.path}\n${f.content.slice(0, 1000)}`
-  ).join('\n\n---\n\n');
+  const prompt = `You are a technical writer creating a GitHub README.md.
 
-  const prompt = `You are an expert technical writer creating a comprehensive, professional GitHub README.md file.
+PROJECT: ${repoInfo.fullName}
+Language: ${repoInfo.language || 'Web/Frontend'}
+Description: ${repoInfo.description || 'No description'}
 
-PROJECT DETAILS:
-- Repository: ${repoInfo.fullName}
-- Description: ${repoInfo.description || 'No description provided'}
-- Primary Language: ${repoInfo.language}
-- GitHub Stars: ${repoInfo.stars}
+FILES: ${filesList}
 
-CODE ANALYSIS RESULTS:
-- Total Files: ${files.length}
-- Functions: ${analysisResults.functions.length}
-- Classes: ${analysisResults.classes.length}
-- API Endpoints: ${analysisResults.apiEndpoints.length}
+ANALYSIS:
+- ${files.length} files analyzed${readmeInfo}
 
-KEY CONFIGURATION FILES:
-${configContent || 'No configuration files found'}
+${context ? `\nNOTES: ${context}` : ''}
 
-SAMPLE CODE FROM MAIN FILES:
-${codeExamples || 'No main entry files identified'}
-${existingReadme}
+TASK: Write a complete README.md with:
 
-${context ? `\nADDITIONAL USER CONTEXT:\n${context}` : ''}
+# Project Name
 
-TASK: Generate a complete, professional README.md for this GitHub repository.
+## Overview (2-3 sentences)
 
-CRITICAL REQUIREMENTS:
-1. If an EXISTING README was provided above:
-   - Read it completely and understand the project
-   - Keep ALL good existing content
-   - Enhance and improve unclear sections
-   - Add any missing critical sections
-   - Improve formatting and structure
+## Features (3-5 bullet points)
 
-2. If NO existing README (generate from scratch):
-   - Analyze the code structure and configuration files
-   - Create comprehensive documentation
+## Installation
+Show setup commands
 
-REQUIRED SECTIONS (in this order):
+## Usage
+How to run/use it
 
-# [Project Name]
+## Project Structure
+Brief overview
 
-## 📖 Overview
-- Clear 2-3 sentence description of what this project does
-- What problem it solves
-- Key capabilities
+Write the complete README now:`;
 
-## ✨ Features
-- Bullet list of main features (3-8 items)
-- What makes this project useful
-
-## 🏗️ Architecture / How It Works
-- Explain the system architecture in 2-3 paragraphs
-- How components interact
-- Key design patterns or technologies
-- Data flow or request/response cycle
-- Be technical but clear
-
-## 🚀 Installation
-
-### Prerequisites
-- List required software, versions
-- Required tools (Node.js, Python, Ollama, etc.)
-
-### Setup Steps
-\`\`\`bash
-# Provide actual, working commands
-# Include cloning, dependency installation, configuration
-\`\`\`
-
-## 📖 Usage
-
-### Basic Usage
-\`\`\`bash
-# Show how to run/start the application
-# Include actual commands with examples
-\`\`\`
-
-### Configuration
-- Explain any .env variables
-- Configuration options
-
-### Examples (if applicable)
-- Show common use cases with actual code/commands
-
-## 📁 Project Structure (if relevant)
-\`\`\`
-# Show key directories and what they contain
-\`\`\`
-
-## 🔌 API Reference (if this is an API)
-${analysisResults.apiEndpoints.length > 0 ? `
-List the ${analysisResults.apiEndpoints.length} API endpoints with:
-- Method and path
-- Description
-- Parameters
-- Response format
-` : '# Skip this section if not an API'}
-
-## 🤝 Contributing (optional)
-Brief note on how to contribute
-
-## 📄 License (if known)
-Mention license
-
-## 🙏 Acknowledgments (if relevant)
-Credit any dependencies or inspiration
-
-FORMATTING RULES:
-- Use proper markdown with code blocks
-- Add emojis to section headers (📦 🚀 💡 ⚙️ 🔧 📖)
-- Use \`\`\`bash, \`\`\`javascript, \`\`\`python for code blocks
-- Make it visually appealing and scannable
-- Be specific and detailed - don't be vague
-- Focus especially on "How It Works", "Installation", and "Usage"
-
-IMPORTANT: Generate the COMPLETE README now. Do not truncate. Write at least 200 lines of quality documentation.`;
-
-  try {
-    console.log('📝 Calling Ollama API for README generation...');
-    console.log(`   Model: ${MODEL}`);
-    console.log(`   No timeout set - will wait as long as needed`);
-    
-    const response = await axiosInstance.post(
-      `${OLLAMA_BASE_URL}/api/generate`,
-      {
-        model: MODEL,
-        prompt,
-        stream: false,
-        options: {
-          temperature: 0.4,
-          num_predict: 3500, // Increased even more
-          top_p: 0.9,
-          top_k: 50
+  // Try up to 3 times
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      console.log(`📝 Attempt ${attempt}/3 - Prompt: ${prompt.length} chars`);
+      console.log(`🌊 Streaming from Ollama...`);
+      
+      const response = await axiosInstance.post(
+        `${OLLAMA_BASE_URL}/api/generate`,
+        {
+          model: MODEL,
+          prompt,
+          stream: true,
+          options: {
+            temperature: 0.4,
+            num_predict: 2000,  // Smaller
+            num_ctx: 3072       // Smaller context
+          }
+        },
+        {
+          responseType: 'stream',
+          timeout: 0,
+          // Add connection keep-alive
+          httpAgent: new (await import('http')).default.Agent({ 
+            keepAlive: true,
+            keepAliveMsecs: 30000
+          })
         }
-      }
-    );
+      );
 
-    const generatedReadme = response.data.response.trim();
-    
-    console.log(`✅ README generated successfully!`);
-    console.log(`   Characters: ${generatedReadme.length}`);
-    console.log(`   Lines: ${generatedReadme.split('\n').length}`);
-    
-    // Validate it's not too short
-    if (generatedReadme.length < 500) {
-      console.warn('⚠️  README seems too short, using fallback...');
-      return generateBasicReadme(repoInfo, analysisResults, configContent);
+      let fullResponse = '';
+      let lastUpdate = Date.now();
+      
+      const result = await new Promise((resolve, reject) => {
+        let timeoutHandle;
+        
+        // Reset timeout on each chunk
+        const resetTimeout = () => {
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+          timeoutHandle = setTimeout(() => {
+            console.error('⚠️  No data received for 30 seconds');
+            reject(new Error('Stream timeout'));
+          }, 30000); // 30 second inactivity timeout
+        };
+        
+        resetTimeout();
+
+        response.data.on('data', (chunk) => {
+          resetTimeout(); // Reset on each chunk
+          const lines = chunk.toString().split('\n').filter(line => line.trim());
+          
+          for (const line of lines) {
+            try {
+              const json = JSON.parse(line);
+              
+              if (json.response) {
+                fullResponse += json.response;
+                
+                // Show progress every second
+                const now = Date.now();
+                if (now - lastUpdate > 1000) {
+                  process.stdout.write('.');
+                  lastUpdate = now;
+                }
+              }
+              
+              if (json.done) {
+                clearTimeout(timeoutHandle);
+                console.log(`\n✅ Complete: ${fullResponse.length} chars`);
+                resolve(fullResponse.trim());
+              }
+              
+            } catch (e) {
+              // Skip invalid JSON
+            }
+          }
+        });
+
+        response.data.on('error', (error) => {
+          clearTimeout(timeoutHandle);
+          console.error(`❌ Stream error: ${error.message}`);
+          reject(error);
+        });
+
+        response.data.on('end', () => {
+          clearTimeout(timeoutHandle);
+          if (fullResponse.length === 0) {
+            reject(new Error('Stream ended with no data'));
+          } else {
+            resolve(fullResponse.trim());
+          }
+        });
+      });
+
+      // Success!
+      if (result.length > 300) {
+        return result;
+      } else {
+        console.warn(`⚠️  Response too short (${result.length} chars), retrying...`);
+      }
+
+    } catch (error) {
+      console.error(`❌ Attempt ${attempt} failed: ${error.message}`);
+      
+      if (attempt < 3) {
+        console.log(`⏳ Waiting 2 seconds before retry...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
     }
-    
-    return generatedReadme;
-  } catch (error) {
-    console.error('❌ Failed to generate enhanced README:', error.message);
-    console.error('   Stack:', error.stack);
-    
-    // Fallback
-    if (readme) {
-      return `# ${repoInfo.name}\n\n${readme}`;
-    }
-    
-    return generateBasicReadme(repoInfo, analysisResults, configContent);
   }
+
+  // All attempts failed - use fallback
+  console.log('💡 All AI attempts failed, using intelligent fallback');
+  return generateFallbackReadme(repoInfo, readme, analysisResults, files);
+}
+
+function generateFallbackReadme(repoInfo, readme, analysisResults, files) {
+  console.log('📝 Generating smart fallback README');
+  
+  // If existing README exists, enhance it
+  if (readme && readme.length > 100) {
+    let enhanced = `# ${repoInfo.name}\n\n${readme}\n\n`;
+    
+    // Add installation if missing
+    if (!readme.toLowerCase().includes('install') && !readme.toLowerCase().includes('setup')) {
+      enhanced += `## 🚀 Installation\n\n`;
+      
+      const hasPackageJson = files.some(f => f.path === 'package.json');
+      const hasRequirements = files.some(f => f.path === 'requirements.txt');
+      
+      if (hasPackageJson) {
+        enhanced += `\`\`\`bash\nnpm install\n\`\`\`\n\n`;
+      } else if (hasRequirements) {
+        enhanced += `\`\`\`bash\npip install -r requirements.txt\n\`\`\`\n\n`;
+      } else {
+        enhanced += `Refer to the repository for setup instructions.\n\n`;
+      }
+    }
+    
+    // Add usage if missing
+    if (!readme.toLowerCase().includes('usage') && !readme.toLowerCase().includes('how to')) {
+      enhanced += `## 📖 Usage\n\n`;
+      enhanced += `Please refer to the documentation or code comments for usage instructions.\n\n`;
+    }
+    
+    return enhanced;
+  }
+  
+  // Generate basic README
+  const lang = repoInfo.language || 'Web';
+  let markdown = `# ${repoInfo.name}\n\n`;
+  
+  if (repoInfo.description) {
+    markdown += `${repoInfo.description}\n\n`;
+  }
+  
+  markdown += `## 📊 Project Info\n\n`;
+  markdown += `- **Language:** ${lang}\n`;
+  markdown += `- **Files:** ${files.length}\n\n`;
+  
+  markdown += `## 🚀 Getting Started\n\n`;
+  markdown += `\`\`\`bash\ngit clone https://github.com/${repoInfo.fullName}.git\n\`\`\`\n\n`;
+  
+  markdown += `Refer to the repository for detailed setup and usage instructions.\n\n`;
+  markdown += `---\n*Generated by CodeDocs AI*\n`;
+  
+  return markdown;
 }
 
 // Fallback basic README generator
